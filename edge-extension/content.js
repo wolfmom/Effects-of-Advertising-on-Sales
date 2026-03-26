@@ -5,6 +5,16 @@ function cleanName(name) {
   return String(name).replace(/\s*\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
 }
 
+function norm(value) {
+  return cleanName(value).toLowerCase();
+}
+
+function isInstructorAuthor(author) {
+  const a = norm(author);
+  const me = norm(INSTRUCTOR_NAME);
+  return a === me || a.startsWith(`${me} `) || a.includes(me);
+}
+
 function getCanvasText() {
   return document.body?.innerText || "";
 }
@@ -30,9 +40,9 @@ function parseReplyEvents(replySectionText) {
   const events = [];
   for (const line of lines) {
     const stripped = line.trim();
-    if (stripped.startsWith("Reply from ")) {
-      events.push({ author: cleanName(stripped.replace("Reply from ", "")) });
-    }
+    const match = stripped.match(/^Reply from\s+(.+)$/i);
+    if (!match) continue;
+    events.push({ author: cleanName(match[1]) });
   }
   return events;
 }
@@ -42,12 +52,18 @@ function summarizeThreads(fullText) {
   return markers.map((marker, i) => {
     const replySectionText = extractReplySectionText(fullText, i, markers);
     const replyEvents = parseReplyEvents(replySectionText);
-    const repliers = replyEvents.map((r) => r.author);
+    const instructorReplied = replyEvents.some((r) => isInstructorAuthor(r.author));
+
     return {
       threadAuthor: marker.author,
-      instructorReplied: repliers.includes(INSTRUCTOR_NAME)
+      instructorReplied
     };
   });
+}
+
+function isIntroductionsForum() {
+  const title = document.querySelector("h1")?.innerText || "";
+  return /introduction/i.test(title);
 }
 
 function findThreadElementsByAuthor() {
@@ -82,9 +98,11 @@ function ensurePanel() {
   highlightPanel.innerHTML = `
     <div class="ewolf-panel-header">
       <img src="${chrome.runtime.getURL("wolf.svg")}" alt="Wolf" />
-      <strong>Threads needing reply</strong>
+      <strong>Reply Coverage</strong>
       <button type="button" id="ewolf-close">×</button>
     </div>
+    <div id="ewolf-summary" class="ewolf-summary"></div>
+    <div class="ewolf-subhead">Threads needing reply</div>
     <ul id="ewolf-list"></ul>
   `;
 
@@ -97,12 +115,30 @@ function ensurePanel() {
   return highlightPanel;
 }
 
-function highlightMissingThreads(missingThreads) {
+function buildSummaryHtml(stats) {
+  const status = stats.repliedCount >= stats.targetCount ? "✅ Target met" : "⚠️ Target not met";
+  return `
+    <div>Total top-level threads: <strong>${stats.totalThreads}</strong></div>
+    <div>You replied to: <strong>${stats.repliedCount}</strong></div>
+    <div>Still missing: <strong>${stats.missingCount}</strong></div>
+    <div>Target (${stats.targetLabel}): <strong>${stats.targetCount}</strong></div>
+    <div>${status}</div>
+  `;
+}
+
+function renderMissingList(missingThreads) {
   removeOldHighlights();
   const authorToElement = findThreadElementsByAuthor();
   const panel = ensurePanel();
   const list = panel.querySelector("#ewolf-list");
   list.innerHTML = "";
+
+  if (!missingThreads.length) {
+    const li = document.createElement("li");
+    li.textContent = "No missing threads found.";
+    list.appendChild(li);
+    return;
+  }
 
   missingThreads.forEach((author) => {
     const li = document.createElement("li");
@@ -121,7 +157,7 @@ function highlightMissingThreads(missingThreads) {
       });
     } else {
       link.classList.add("ewolf-disabled-link");
-      link.title = "Could not locate this thread in the current page DOM.";
+      link.title = "Could not locate this thread marker in the current page DOM.";
     }
 
     li.appendChild(link);
@@ -129,31 +165,56 @@ function highlightMissingThreads(missingThreads) {
   });
 }
 
-async function copyRawTextToClipboard() {
+function copyRawTextToClipboard() {
   const text = getCanvasText();
   if (!text.trim()) {
-    return { ok: false, error: "No page text detected." };
+    return Promise.resolve({ ok: false, error: "No page text detected." });
   }
 
-  try {
-    await navigator.clipboard.writeText(text);
-    return { ok: true };
-  } catch (_err) {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    const success = document.execCommand("copy");
-    ta.remove();
-    return success ? { ok: true } : { ok: false, error: "Clipboard permission was denied." };
-  }
+  return navigator.clipboard.writeText(text)
+    .then(() => ({ ok: true }))
+    .catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      const success = document.execCommand("copy");
+      ta.remove();
+      return success ? { ok: true } : { ok: false, error: "Clipboard permission was denied." };
+    });
 }
 
-function getMissingThreads() {
+function getThreadStats() {
   const fullText = getCanvasText();
-  const all = summarizeThreads(fullText).filter((t) => t.threadAuthor !== INSTRUCTOR_NAME);
-  const missing = all.filter((t) => !t.instructorReplied).map((t) => t.threadAuthor);
-  return [...new Set(missing)];
+  const allThreads = summarizeThreads(fullText).filter((t) => !isInstructorAuthor(t.threadAuthor));
+  const uniqueByAuthor = new Map();
+  allThreads.forEach((t) => {
+    if (!uniqueByAuthor.has(t.threadAuthor)) uniqueByAuthor.set(t.threadAuthor, t);
+  });
+
+  const threads = [...uniqueByAuthor.values()];
+  const missingThreads = threads.filter((t) => !t.instructorReplied).map((t) => t.threadAuthor);
+  const repliedCount = threads.length - missingThreads.length;
+  const intro = isIntroductionsForum();
+  const targetCount = intro ? threads.length : Math.ceil(threads.length * 0.5);
+
+  return {
+    totalThreads: threads.length,
+    repliedCount,
+    missingCount: missingThreads.length,
+    missingThreads,
+    targetCount,
+    targetLabel: intro ? "100%" : "50%"
+  };
+}
+
+function showCoveragePanel() {
+  const stats = getThreadStats();
+  const panel = ensurePanel();
+  const summary = panel.querySelector("#ewolf-summary");
+  summary.innerHTML = buildSummaryHtml(stats);
+  renderMissingList(stats.missingThreads);
+  return stats;
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -164,9 +225,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "SHOW_MISSING_THREADS") {
     try {
-      const missing = getMissingThreads();
-      highlightMissingThreads(missing);
-      sendResponse({ ok: true, count: missing.length });
+      const stats = showCoveragePanel();
+      sendResponse({ ok: true, count: stats.missingCount, stats });
     } catch (err) {
       sendResponse({ ok: false, error: String(err.message || err) });
     }

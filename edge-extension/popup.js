@@ -35,10 +35,12 @@ document.getElementById("showMissing").addEventListener("click", async () => {
     const result = await sendToContent({ type: "SHOW_MISSING_THREADS" });
     if (result?.ok) {
       const count = result.count ?? 0;
+      const replied = result?.stats?.repliedCount ?? 0;
+      const total = result?.stats?.totalThreads ?? 0;
       setStatus(
         count > 0
-          ? `Found ${count} thread(s) still needing your reply.`
-          : "No missing threads found."
+          ? `Missing: ${count}. Replied: ${replied}/${total}. See right-side panel.`
+          : `No missing threads found. Replied: ${replied}/${total}.`
       );
     } else {
       setStatus(result?.error || "Unable to build missing-thread list.", false);
