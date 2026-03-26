@@ -3,11 +3,30 @@ async function getActiveTab() {
   return tabs[0];
 }
 
+function isCanvasDiscussionUrl(url) {
+  return /\/discussion_topics\//i.test(url || "");
+}
+
+async function ensureContentReady(tab) {
+  if (!tab?.id) throw new Error("No active tab found.");
+
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: "PING" });
+    return;
+  } catch (_err) {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+    await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["content.css"] });
+  }
+}
+
 async function sendToContent(message) {
   const tab = await getActiveTab();
-  if (!tab?.id) {
-    throw new Error("No active tab found.");
+
+  if (!isCanvasDiscussionUrl(tab?.url)) {
+    throw new Error("Open a Canvas discussion page first (URL should include /discussion_topics/).");
   }
+
+  await ensureContentReady(tab);
   return chrome.tabs.sendMessage(tab.id, message);
 }
 

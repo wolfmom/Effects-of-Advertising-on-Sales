@@ -7,16 +7,28 @@
     "default_title": "Eva Wolf Canvas Helper",
     "default_popup": "popup.html"
   },
-  "permissions": ["activeTab", "storage"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
   "content_scripts": [
     {
       "matches": [
         "*://*/courses/*/discussion_topics/*",
         "*://*/discussion_topics/*"
       ],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
+  ],
+  "host_permissions": [
+    "*://*/courses/*/discussion_topics/*",
+    "*://*/discussion_topics/*"
   ]
 }

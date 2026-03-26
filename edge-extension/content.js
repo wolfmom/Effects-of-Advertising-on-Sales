@@ -151,8 +151,7 @@ function ensurePanel() {
   highlightPanel.className = "ewolf-panel";
   highlightPanel.innerHTML = `
     <div class="ewolf-panel-header">
-      <img src="${chrome.runtime.getURL("wolf.svg")}" alt="Wolf" />
-      <strong>Eva Wolf Tracker</strong>
+      <strong>Discussion Tracker</strong>
       <button type="button" id="ewolf-close">×</button>
     </div>
     <div id="ewolf-summary" class="ewolf-summary"></div>
@@ -205,6 +204,41 @@ function analyzeEngagement(threads) {
     weekendMet: dayPairs.some((d) => d.weekday === "Saturday" || d.weekday === "Sunday"),
     fourDayRuleMet: dayPairs.length >= 4
   };
+}
+
+
+function extractGlobalInstructorDates(fullText) {
+  const lines = fullText.split(/\r?\n/);
+  const dates = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (line.toLowerCase().includes(norm(INSTRUCTOR_NAME))) {
+      for (let j = i; j <= Math.min(i + 3, lines.length - 1); j += 1) {
+        const cand = lines[j].trim();
+        if (MONTH_LINE_RE.test(cand)) {
+          const parsed = parseCanvasDate(cand);
+          if (parsed) dates.push(parsed);
+          break;
+        }
+        const embedded = cand.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:\s+\d{1,2}:\d{2}(?:am|pm))?/i);
+        if (embedded) {
+          const parsed = parseCanvasDate(embedded[0]);
+          if (parsed) dates.push(parsed);
+          break;
+        }
+      }
+    }
+  }
+
+  return dates;
+}
+
+function buildSuggestion(author) {
+  const first = cleanName(author).split(" ")[0] || "there";
+  return `Hi ${first}, thank you for your thoughtful post. I appreciated your perspective and how you connected it to the discussion prompt. One follow-up I would love to hear is how you would apply this in a real classroom or work setting. Thanks again for contributing.`;
 }
 
 function buildReport(stats) {
@@ -262,7 +296,14 @@ function buildReport(stats) {
   lines.push("-".repeat(75));
   lines.push("SUGGESTED REPLIES FOR MISSING THREADS");
   lines.push("-".repeat(75));
-  lines.push(stats.missingThreads.length ? "(Use tracker suggestions workflow.)" : "No suggestions needed — Eva has covered all counted threads.");
+  if (stats.missingThreads.length) {
+    stats.missingThreads.forEach((name) => {
+      lines.push(`- ${name}:`);
+      lines.push(`  ${buildSuggestion(name)}`);
+    });
+  } else {
+    lines.push("No suggestions needed — Eva has covered all counted threads.");
+  }
 
   return lines.join("\n");
 }
@@ -339,7 +380,17 @@ function getThreadStats() {
   const repliedCount = threads.length - missingThreads.length;
   const intro = isIntroductionsForum();
   const targetCount = intro ? threads.length : Math.ceil(threads.length * 0.5);
-  const engagement = analyzeEngagement(threads);
+  const globalEvaDates = extractGlobalInstructorDates(fullText);
+  const threadsWithGlobal = threads.map((t) => ({ ...t }));
+  if (globalEvaDates.length && threadsWithGlobal.length) {
+    // Attach global dates to first thread as a fallback source so engagement counts are not lost.
+    threadsWithGlobal[0].instructorReplyDates = [
+      ...(threadsWithGlobal[0].instructorReplyDates || []),
+      ...globalEvaDates
+    ];
+  }
+
+  const engagement = analyzeEngagement(threadsWithGlobal);
 
   return {
     title,
@@ -350,7 +401,7 @@ function getThreadStats() {
     missingThreads,
     targetCount,
     targetLabel: intro ? "100% (Introductions forum)" : "50% (standard discussion rule)",
-    threads,
+    threads: threadsWithGlobal,
     engagement
   };
 }
@@ -393,6 +444,11 @@ async function showCoveragePanel() {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "PING") {
+    sendResponse({ ok: true });
+    return false;
+  }
+
   if (message?.type === "COPY_RAW_TEXT") {
     copyRawTextToClipboard().then(sendResponse);
     return true;
