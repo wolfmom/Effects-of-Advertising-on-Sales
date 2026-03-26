@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Eva Wolf Canvas Helper",
+  "description": "One-click copy + missing-reply thread navigator for Canvas discussions.",
+  "version": "1.0.0",
+  "action": {
+    "default_title": "Eva Wolf Canvas Helper",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*/courses/*/discussion_topics/*",
+        "*://*/discussion_topics/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "*://*/courses/*/discussion_topics/*",
+    "*://*/discussion_topics/*"
+  ]
+}
