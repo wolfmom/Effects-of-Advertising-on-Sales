@@ -37,11 +37,15 @@ document.getElementById("showMissing").addEventListener("click", async () => {
       const count = result.count ?? 0;
       const replied = result?.stats?.repliedCount ?? 0;
       const total = result?.stats?.totalThreads ?? 0;
-      setStatus(
-        count > 0
-          ? `Missing: ${count}. Replied: ${replied}/${total}. See right-side panel.`
-          : `No missing threads found. Replied: ${replied}/${total}.`
-      );
+      if (result?.stats?.warning === "no_threads_detected") {
+        setStatus("I opened split-screen, but threads are still not detected. Open a thread list, then click again.", false);
+      } else {
+        setStatus(
+          count > 0
+            ? `Missing: ${count}. Replied: ${replied}/${total}. See right-side panel.`
+            : `No missing threads found. Replied: ${replied}/${total}.`
+        );
+      }
     } else {
       setStatus(result?.error || "Unable to build missing-thread list.", false);
     }

@@ -66,6 +66,23 @@ function isIntroductionsForum() {
   return /introduction/i.test(title);
 }
 
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function clickButtonByLabel(labelPattern) {
+  const candidates = document.querySelectorAll("button, a, [role='button']");
+  for (const el of candidates) {
+    const txt = (el.textContent || "").trim();
+    if (labelPattern.test(txt)) {
+      el.click();
+      return true;
+    }
+  }
+  return false;
+}
+
 function findThreadElementsByAuthor() {
   const map = new Map();
   const selector = "button, a, [role='button'], div, span";
@@ -208,10 +225,30 @@ function getThreadStats() {
   };
 }
 
-function showCoveragePanel() {
-  const stats = getThreadStats();
+async function showCoveragePanel() {
+  let stats = getThreadStats();
+
+  // Canvas often requires split-screen mode to expose thread text markers.
+  if (stats.totalThreads === 0) {
+    const openedSplit = clickButtonByLabel(/view\s+split\s+screen/i);
+    if (openedSplit) {
+      await sleep(1200);
+      stats = getThreadStats();
+    }
+  }
+
   const panel = ensurePanel();
   const summary = panel.querySelector("#ewolf-summary");
+
+  if (stats.totalThreads === 0) {
+    summary.innerHTML = `
+      <div><strong>Could not detect threads yet.</strong></div>
+      <div>Try clicking <strong>View Split Screen</strong>, then click this extension button again.</div>
+    `;
+    renderMissingList([]);
+    return { ...stats, warning: "no_threads_detected" };
+  }
+
   summary.innerHTML = buildSummaryHtml(stats);
   renderMissingList(stats.missingThreads);
   return stats;
@@ -224,12 +261,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "SHOW_MISSING_THREADS") {
-    try {
-      const stats = showCoveragePanel();
-      sendResponse({ ok: true, count: stats.missingCount, stats });
-    } catch (err) {
-      sendResponse({ ok: false, error: String(err.message || err) });
-    }
+    showCoveragePanel()
+      .then((stats) => sendResponse({ ok: true, count: stats.missingCount, stats }))
+      .catch((err) => sendResponse({ ok: false, error: String(err.message || err) }));
+    return true;
   }
 
   return false;
