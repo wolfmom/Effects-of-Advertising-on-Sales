@@ -5,7 +5,7 @@ This extension stays local on your machine. You do **not** need GitHub to use it
 ## Features
 - Small wolf logo in the popup.
 - **Option A:** one-click copy of Canvas discussion text to clipboard.
-- Right-side coverage panel with totals (threads counted, replied, missing, target) plus clickable missing-thread links.
+- Right-side coverage panel with totals, missing-thread links, and a full tracker-style report block (thread status, dates, day counts, weekend/four-day checks).
 
 ## Install in Microsoft Edge (local only)
 1. Open Edge and go to `edge://extensions`.

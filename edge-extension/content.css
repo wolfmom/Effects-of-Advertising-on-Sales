@@ -86,3 +86,17 @@
   text-decoration: none !important;
   cursor: default !important;
 }
+
+
+.ewolf-report {
+  margin: 8px 14px 14px;
+  padding: 10px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 11px;
+  line-height: 1.35;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+}
