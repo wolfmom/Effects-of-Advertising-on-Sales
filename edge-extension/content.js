@@ -15,7 +15,7 @@ function norm(value) {
 function isInstructorAuthor(author) {
   const a = norm(author);
   const me = norm(INSTRUCTOR_NAME);
-  return a === me || a.startsWith(`${me} `) || a.includes(me);
+  return a === me || a.startsWith(`${me} `);
 }
 
 function getCanvasText() {
@@ -41,23 +41,25 @@ function extractReplySectionText(fullText, currentIndex, markers) {
 function parseCanvasDate(line) {
   if (!line) return null;
   const value = line.split("|")[0].trim();
-  const fmts = ["%b %d %I:%M%p", "%b %d %I%p"];
+  const m = value.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:\s+(\d{1,2})(?::(\d{2}))?(am|pm))?$/i);
+  if (!m) return null;
 
-  for (const fmt of fmts) {
-    try {
-      const parsed = window.moment ? window.moment(value, fmt).toDate() : null;
-      if (parsed && !Number.isNaN(parsed.getTime())) {
-        parsed.setFullYear(DEFAULT_YEAR);
-        return parsed;
-      }
-    } catch (_e) {
-      // no-op
-    }
-  }
+  const monthMap = {
+    Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+    Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11
+  };
 
-  // native fallback
-  const native = new Date(`${value} ${DEFAULT_YEAR}`);
-  return Number.isNaN(native.getTime()) ? null : native;
+  const mon = m[1][0].toUpperCase() + m[1].slice(1, 3).toLowerCase();
+  const month = monthMap[mon];
+  const day = Number(m[2]);
+  let hour = Number(m[3] || 0);
+  const minute = Number(m[4] || 0);
+  const ampm = (m[5] || "").toLowerCase();
+
+  if (ampm === "pm" && hour < 12) hour += 12;
+  if (ampm === "am" && hour === 12) hour = 0;
+
+  return new Date(DEFAULT_YEAR, month, day, hour, minute, 0, 0);
 }
 
 function parseReplyEvents(replySectionText) {
@@ -93,7 +95,7 @@ function summarizeThreads(fullText) {
   return markers.map((marker, i) => {
     const replySectionText = extractReplySectionText(fullText, i, markers);
     const replyEvents = parseReplyEvents(replySectionText);
-    const instructorEvents = replyEvents.filter((r) => isInstructorAuthor(r.author));
+    const instructorEvents = replyEvents.filter((r) => isInstructorAuthor(r.author) && !!r.parsedDate);
 
     return {
       threadAuthor: marker.author,
@@ -223,7 +225,7 @@ function extractGlobalInstructorDates(fullText) {
           if (parsed) dates.push(parsed);
           break;
         }
-        const embedded = cand.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:\s+\d{1,2}:\d{2}(?:am|pm))?/i);
+        const embedded = cand.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:\s+\d{1,2}(?::\d{2})?(?:am|pm)?)?/i);
         if (embedded) {
           const parsed = parseCanvasDate(embedded[0]);
           if (parsed) dates.push(parsed);
