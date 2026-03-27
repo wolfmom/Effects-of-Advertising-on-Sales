@@ -80,10 +80,12 @@ function parseReplyEvents(replySectionText) {
       }
     }
 
+    const nearbyMeta = lines.slice(Math.max(0, i - 3), i).join(" | ");
     events.push({
       author: cleanName(match[1]),
       dateLine: detectedDateLine,
-      parsedDate: parseCanvasDate(detectedDateLine)
+      parsedDate: parseCanvasDate(detectedDateLine),
+      looksLikeTopLevelPost: /last edited|last reply/i.test(nearbyMeta)
     });
   }
 
@@ -95,7 +97,7 @@ function summarizeThreads(fullText) {
   return markers.map((marker, i) => {
     const replySectionText = extractReplySectionText(fullText, i, markers);
     const replyEvents = parseReplyEvents(replySectionText);
-    const instructorEvents = replyEvents.filter((r) => isInstructorAuthor(r.author) && !!r.parsedDate);
+    const instructorEvents = replyEvents.filter((r) => isInstructorAuthor(r.author) && !!r.parsedDate && !r.looksLikeTopLevelPost);
 
     return {
       threadAuthor: marker.author,
@@ -103,6 +105,23 @@ function summarizeThreads(fullText) {
       instructorReplyDates: instructorEvents.map((e) => e.parsedDate).filter(Boolean)
     };
   });
+}
+
+function extractPremarkerThreadAuthors(fullText) {
+  const markers = getThreadMarkers(fullText);
+  const firstMarkerStart = markers.length ? markers[0].start : fullText.length;
+  const head = fullText.slice(0, firstMarkerStart);
+  const re = /^Reply from\s+(.+)$/gmi;
+  const seen = new Set();
+  let m;
+
+  while ((m = re.exec(head)) !== null) {
+    const author = cleanName(m[1]);
+    if (!author || isInstructorAuthor(author)) continue;
+    seen.add(author);
+  }
+
+  return [...seen];
 }
 
 function isIntroductionsForum() {
@@ -370,14 +389,25 @@ function getThreadStats() {
   const fullText = getCanvasText();
   const title = document.querySelector("h1")?.innerText?.trim() || "Discussion";
   const allSummaries = summarizeThreads(fullText);
-  const totalTopLevelThreads = allSummaries.length;
+  const premarkerAuthors = extractPremarkerThreadAuthors(fullText);
   const filtered = allSummaries.filter((t) => !isInstructorAuthor(t.threadAuthor));
   const uniqueByAuthor = new Map();
   filtered.forEach((t) => {
     if (!uniqueByAuthor.has(t.threadAuthor)) uniqueByAuthor.set(t.threadAuthor, t);
   });
 
+  premarkerAuthors.forEach((author) => {
+    if (!uniqueByAuthor.has(author)) {
+      uniqueByAuthor.set(author, {
+        threadAuthor: author,
+        instructorReplied: false,
+        instructorReplyDates: []
+      });
+    }
+  });
+
   const threads = [...uniqueByAuthor.values()];
+  const totalTopLevelThreads = threads.length;
   const missingThreads = threads.filter((t) => !t.instructorReplied).map((t) => t.threadAuthor);
   const repliedCount = threads.length - missingThreads.length;
   const intro = isIntroductionsForum();
